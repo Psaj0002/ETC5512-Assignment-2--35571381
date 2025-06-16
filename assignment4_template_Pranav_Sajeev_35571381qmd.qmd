@@ -11,11 +11,57 @@ editor: visual
 
 ## Data and Documenting
 
-### What's in this section
+### 1. Research Question
 
-Here is where you should provide the more comprehensive details about your data and your processing steps.
+What is the ideal length of a game that gives the maximum amount of satisfaction, by genre?
 
-These are the data details that an "average" blog post reader is not concerned with (Task 1).
+For each genre, what game lengths tend to receive the highest player ratings?\
+Do different genres have different “ideal” lengths in terms of user satisfaction?
+
+## 2. The data
+
+1.  the data is downloaded mainly from 2 sources: <https://github.com/NewbieIndieGameDev/steam-insights> for data from the Steam store.
+2.  PlaymyData, which is a dataset that contains information about the amout of time taken to complete each game. It also contains other metrics. This data is taken from the website <https://huggingface.co/datasets/claudioDsi94/PlayMyData/tree/main>
+
+## 3. Processing the data
+
+```{r}
+#Loading Libraries
+library(tidyverse)
+library(readr)
+```
+
+```{r}
+# Reading in the data
+
+
+playmydata_pc_data=read_csv("./data/all_games_PC.csv")
+
+steam_game_data=read_csv(("./data/games.csv"))
+
+steam_categories = read_csv("./data/categories.csv")
+
+steam_tags = read_csv("./data/tags.csv")
+```
+
+```{r}
+# Grouping the tags and category data
+steam_tags_grouped = steam_tags |>
+  group_by(app_id) |>
+  summarise(tags = list(tag), .groups = "drop")
+
+steam_categories_grouped = steam_categories|>
+  group_by(app_id) |>
+  summarise(categories= list(category), .groups = "drop")
+
+# Adding the data to the main steam data
+steam_game_data = steam_game_data |>
+  left_join(steam_categories_grouped, by= "app_id")|>
+  left_join(steam_tags_grouped, by="app_id")
+
+#Creating the final dataset by joining the playmydata dataset
+final_game_data = left_join(steam_game_data, playmydata_pc_data, by = "name")
+```
 
 ### Remember
 
@@ -34,17 +80,33 @@ Here is where you should write your blogpost! (Task 2)
 There is no strict structure for you to follow. However, here is a skeleton structure you may find helpful.
 
 1.  Title (is set at the top of this document)
-2.  Motivation\
-3.  Data\
-4.  Analysis\
-5.  Conclusions\
-6.  References
+
+2.  Motivation
+
+    Winter break is almost upon us. Many have plans set for the holidays already; some plan to travel, some plan to work, some plan to take up some extra studies, the possibilities are endless. Personally, I want to sit and play as many video games as possible. However, time is limited and this leads to an important question: which games should I choose to play?
+
+    Each game can take days to finish, given that I am taking enough breaks to rest, and there are so many different types out there, from small indie games to large open-world RPGs. So it is important to choose the games I play wisely to make sure I don't feel like I've started something I can't finish.
+
+    This inspired me to investigate what the ideal length of a game for different genres are, in terms of both duration and satisfaction. Are players more satisfied with shorter or longer games in each genre? Can we identify “sweet spots” where games are most positively received?
+
+3.  \
+
+4.  Data\
+
+5.  Analysis\
+
+6.  Conclusions\
+
+7.  References
 
 <!-- Task 3 Tab: Behind the Scenes -  -->
 
 ## Behind the Scenes
 
-### What's in this section
+### Question 5
+
+1.  the tags and categories were in a wide format. So each tag/category was displayed in it's own row. Insetad I made the dataset shorter by making all the tags/categories into a vector for each id.
+2.   Some games in the Steam data had the ™ in the name, which led to problems while joining the datasets by name
 
 Here is where you should tell us about your reflection on your analysis (Task 3).
 
