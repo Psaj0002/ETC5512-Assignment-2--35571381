@@ -1,37 +1,49 @@
 ---
-title: "What is your blogpost title? Add it here??"
+title: "What video game lengths tend to receive the highest player ratings per genre?"
 subtitle: "Assignment 4 ETC5512"
 author: "Pranav Sajeev - 35571381"
-format: html
+format:
+  html:
+    format: cosmo
+    css: box.css
 editor: visual
 ---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE,message = FALSE) 
+```
 
 ::: panel-tabset
 <!-- Task 1 Tab: Data and Documenting -->
 
 ## Data and Documenting
 
-### 1. Research Question
+### Research Question
 
-What is the ideal length of a game that gives the maximum amount of satisfaction, by genre?
-
-For each genre, what game lengths tend to receive the highest player ratings?\
+What is the ideal length of a game that gives the maximum amount of satisfaction, by genre?\
 Do different genres have different “ideal” lengths in terms of user satisfaction?
 
-## 2. The data
+### The data
 
 The data is downloaded mainly from 2 sources:
 
-1.   Data from the Steam store: <https://github.com/NewbieIndieGameDev/steam-insights>
-2.  PlaymyData, which is a dataset that contains information about the amount of time taken to complete each game. It also contains other metrics. This data is taken from the website <https://huggingface.co/datasets/claudioDsi94/PlayMyData/tree/main>.
+-   Data from the Steam store: <https://github.com/NewbieIndieGameDev/steam-insights>
+-   PlaymyData, which is a dataset that contains information about the amount of time taken to complete each game. It also contains other metrics. This data is taken from the website \[https://huggingface.co/datasets/claudioDsi94/PlayMyData/tree/main\\\\\](https://huggingface.co/datasets/claudioDsi94/PlayMyData/tree/main){.uri}
 
-## 3. Processing the data
+**PlaymyData** uses APIs to get data from **IGDB (Internet Game Database)** and **HLTB (HowLongToBeat),**  which are two websites that have data on video games. The authors leverage IGDB's API to automate the data collection process. It allows structured access to IGDB's data, avoiding the need for web scraping which can be fragile and violate terms of service. From this data, we are mainly concerned with the ratings from IGDB. The authors use a community-built API to access HLTB data as well. This is the only source of HLTB data I could find where spiders were not used to obtain the game completion time data.
+
+**Steam Catalog Insights (October 2024)** is a GitHub repository that contains multiple .csv files of data that has been taken from Steam, a digital software distribution platform, developed and published by Valve Corporation, widely known for its video game distribution. This data uses bots and webscraping to obtain data. The author has uploaded a [YouTube video](https://www.youtube.com/watch?v=qiNv3qv-YbU) on his process and insights as well.
+
+Steam’s ToS and website terms are not always explicit about web scraping. Steam’s robots.txt file is a set of guidelines that robots accessing Steam are to follow. It allows some automated access to public pages, but this is not a legal guarantee. This may be an ethical concern as even though the author does not break any rules or terms of use, it is a grey area in terms of data collection.
+
+### Processing the data
 
 ```{r}
 #Loading Libraries
 library(tidyverse)
 library(readr)
 library(stringr)
+library(kableExtra)
 ```
 
 ```{r}
@@ -46,12 +58,12 @@ steamspy_data= read_csv("./data/steamspy_insights.csv")
 ```
 
 ```{r}
+#Cleaning the Steam Data
+
 ##Removing all demos from the data and NA values
 steam_game_data = steam_game_data|>
   filter(!type=="demo")
 
-steam_game_data = steam_game_data|>
-  filter(!owners_range=="NA")
 #Selecting the required variables from the steam dataset
 steam_game_data=steam_game_data|>
   select(app_id,name)
@@ -73,9 +85,9 @@ steam_game_data = steam_game_data|> select(-app_id)
 steam_game_data$name = str_replace_all(steam_game_data$name, "™", "")
 
 #Now cleaning the playmydata data
-
 playmydata_pc_data=playmydata_pc_data|>
   select(-c(genres,id,platforms,summary,storyline,people_polled,))
+
 #Removing NA values
 playmydata_pc_data=playmydata_pc_data|>
   filter(!rating %in% c("Missing","nan"))
@@ -92,60 +104,189 @@ playmydata_pc_data$rating = round(playmydata_pc_data$rating,2)
 #Joining the datasets
 final_game_data = inner_join(playmydata_pc_data,steam_game_data, by="name")
 
-# adjustments on the final dataset
+# Adjustments on the final dataset
 #Separating the genres into different rows
 final_game_data = final_game_data|> 
   separate_rows(genres, sep = ",\\s*") 
 
-#Creating an average length variable based on completeion times
-final_game_data_t = final_game_data|> 
-  mutate(
-  main = na_if(main, 0),
-  extra = na_if(extra, 0),
-  completionist = na_if(completionist, 0),
-  avg_length = rowMeans(across(c(main, extra, completionist)), na.rm = TRUE)
-)
 
+#Creating a variable of the middle value of owners_range
+final_game_data = final_game_data|>
+  mutate(
+    owners_mid = sapply(
+      str_extract_all(owners_range, "\\d+,?\\d*"),
+      function(x) mean(as.numeric(gsub(",", "", x))) #removing ","
+    )
+  )
+# Count games per genre
+genre_counts <- final_game_data %>%
+  count(genres, sort = TRUE)
+
+
+# Create popularity weights
+final_game_data = final_game_data|>
+  mutate(
+  log_owners = log10(owners_mid + 1),
+  weight = (log_owners - min(log_owners, na.rm = TRUE)) / 
+    (max(log_owners, na.rm = TRUE) - min(log_owners, na.rm = TRUE))
+) %>%
+  # Remove missing data
+  filter(!is.na(rating), !is.na(main), !is.na(owners_mid), main > 0)
+
+
+# Analyze each genre directly
+genre_analysis <- final_game_data %>%
+  group_by(genres) %>%
+  summarise(
+    game_count = n(),
+    avg_rating = round(mean(rating), 2),
+    weighted_avg_rating = round(weighted.mean(rating, weight), 2),
+    avg_length = round(mean(main), 2),
+    weighted_avg_length = round(weighted.mean(main, weight), 2),
+    correlation = round(cor(main, rating), 3),
+    min_length = round(min(main), 2),
+    max_length = round(max(main), 2)
+  ) %>%
+  arrange(desc(weighted_avg_rating))
+
+# Create length categories and analyze
+games_categorized <- final_game_data %>%
+  mutate(
+    length_category = case_when(
+      main <= 2 ~ "Very Short (≤2h)",
+      main <= 8 ~ "Short (2-8h)",
+      main <= 20 ~ "Medium (8-20h)",
+      main <= 40 ~ "Long (20-40h)",
+      TRUE ~ "Very Long (>40h)"
+    )
+  )
+
+# Analyze by category and genre
+category_analysis <- games_categorized %>%
+  group_by(genres, length_category) %>%
+  summarise(
+    game_count = n(),
+    avg_rating = round(mean(rating), 2),
+    weighted_avg_rating = round(weighted.mean(rating, weight), 2)
+  ) %>%
+  filter(game_count >= 3) %>%
+  arrange(genres, desc(weighted_avg_rating))
+
+
+
+#FIND OPTIMAL LENGTHS
+# Find best performing categories per genre
+optimal_lengths <- category_analysis %>%
+  group_by(genres) %>%
+  slice_max(weighted_avg_rating, n = 1) %>%
+  select(genres, optimal_category = length_category, 
+         optimal_rating = weighted_avg_rating, games_in_category = game_count)
 
 ```
 
-### Remember
-
-Please mention any additional files that you want the markers to review, eg. read me, meta data etc.
+### Additional Files
 
 The github repository for this Quarto document is [here](https://github.com/Psaj0002/ETC5512-Assignment-2--35571381). Please note that the first commit is in a separate file as the file was later renamed.
+
+In the zip folder is also the README.txt and metadata.xlsx file
 
 <!-- Task 2 Tab: Writing your blogpost -->
 
 ## Blog post
 
-### What's in this section
+### Why analyse video game lengths?
 
-Here is where you should write your blogpost! (Task 2)
+Winter break is almost upon us. Many have plans set for the holidays already; some plan to travel, some plan to work, some plan to take up some extra studies, the possibilities are endless. Personally, I want to sit and play as many video games as possible. However, time is limited and this leads to an important question: which games should I choose to play?
 
-### Blogpost Structure
+Each game can take days to finish, given that I am taking enough breaks to rest, and there are so many different types out there, from small indie games to large open-world RPGs. So it is important to choose the games I play wisely to make sure I don't feel like I've started something I can't finish.
 
-There is no strict structure for you to follow. However, here is a skeleton structure you may find helpful.
+This inspired me to investigate what the ideal length of a game for different genres are, in terms of both duration and satisfaction. Are players more satisfied with shorter or longer games in each genre? Can we identify “sweet spots” where games are most positively received?
 
-1.  Title (is set at the top of this document)
+\
 
-2.  Motivation
+### The Data
 
-    Winter break is almost upon us. Many have plans set for the holidays already; some plan to travel, some plan to work, some plan to take up some extra studies, the possibilities are endless. Personally, I want to sit and play as many video games as possible. However, time is limited and this leads to an important question: which games should I choose to play?
+The data is sourced from 2 main sources: a large, and curated dataset called "PlayMyData" focusing on video games across multiple platforms (PC, PlayStation, Xbox, and Nintendo), and a repository containing CSV files of video game data from Steam, covering categories, descriptions, game details, genres, promotional materials, reviews, SteamSpy insights, and tags. Data from these sources have been processed and combined into a single dataset.
 
-    Each game can take days to finish, given that I am taking enough breaks to rest, and there are so many different types out there, from small indie games to large open-world RPGs. So it is important to choose the games I play wisely to make sure I don't feel like I've started something I can't finish.
+Here is a glimpse of how the final dataset looks like:
 
-    This inspired me to investigate what the ideal length of a game for different genres are, in terms of both duration and satisfaction. Are players more satisfied with shorter or longer games in each genre? Can we identify “sweet spots” where games are most positively received?
+```{r echo=FALSE}
 
-3.  \
+data_table=head(final_game_data,8)
+kable(data_table)
 
-4.  Data\
+```
 
-5.  Analysis\
+### The Analysis
 
-6.  Conclusions\
+#### Top genres by count
 
-7.  References
+```{r echo=FALSE}
+
+    # Plot 1: Top genres by game count
+    genre_counts %>%
+      head(10) %>%
+      ggplot(aes(x = reorder(genres, n), y = n)) +
+      geom_bar(stat = "identity", fill = "steelblue") +
+      coord_flip() +
+      labs(title = "Top 10 Genres by Game Count",
+           x = "Genre", y = "Number of Games") +
+      theme_minimal()
+```
+
+As shown by the bar chart, Action, Adventure and Indie are the most common genres. This suggests that these genres dominate the current gaming landscape
+
+#### Length vs rating for the top genres
+
+```{r echo=FALSE}
+    # Plot 2: Length vs Rating for top genres
+    final_game_data %>%
+      filter(genres %in% head(genre_counts$genres, 6), main <= 50) %>%
+      ggplot(aes(x = main, y = rating)) +
+      geom_point(aes(size = weight), alpha = 0.6, color = "steelblue") +
+      geom_smooth(method = "loess", color = "red") +
+      facet_wrap(~genres, scales = "free_x") +
+      scale_size_continuous(range = c(0.5, 3), guide = "none") +
+      labs(title = "Game Length vs Rating by Genre",
+           x = "Main Story Length (Hours)", y = "Rating") +
+      theme_minimal()
+```
+
+In the scatter plots we can see there is often a "sweet spot" for the length of a game.
+
+\
+**Action Games**: Optimal length appears to be in the 5-15 hour range, where focused pacing and gameplay receive the highest ratings. Games like "Hotline Miami" (5.24 hours, 83.75 rating) demonstrate this sweet spot.
+
+**Adventure Games**: Can sustain longer experiences of 8-15 hours, benefiting from narrative development time."The Talos Principle" (15.81 hours, 87.25 rating) shows longer game deign being successful.
+
+**Indie Games**: These show flexibility in their optimal length from 2-10 hours, with quality and focus being more important than duration. 
+
+**RPGs**: Demonstrate that longer experiences (25-50+ hours) can maintain high ratings when the games justify the time investment. "Divinity: Original Sin" (61.18 hours, 85.84 rating) shows how deep and complex game mechanics encourage longer playtime.
+
+**Strategy Games**: Benefit from substantial campaign lengths of 15-30 hours, allowing complex systems to develop. Games like "XCOM: Enemy Unknown" (26.66 hours, 82.97 rating) demonstrate optimal strategy game pacing.
+
+#### Ratings by game length category
+
+```{r echo=FALSE}
+    # Plot 3: Average ratings by length category
+    category_analysis %>%
+      filter(genres %in% head(genre_counts$genres, 5)) %>%
+      ggplot(aes(x = length_category, y = weighted_avg_rating, fill = genres)) +
+      geom_bar(stat = "identity", position = "dodge") +
+      labs(title = "Average Rating by Length Category",
+           x = "Length Category", y = "Weighted Average Rating") +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+The bar chart shows that short to medium categories (i.e. 2-20 hours) generally achieve the highest weighted average ratings.\
+Very long games (more than 40 hours) rarely have high ratings, except in genres like RPG, where players prefer longer experiences.\
+Very short games (2 hours or less) have lower ratings, as there is not much that can be enjoyed from a game in that little time.
+
+### What do we understand from the analysis?
+
+From the analysis we have conducted so far, we can gather that video games have a sweet spot of length depending on the genre. So to fully optimise winter break gaming, the games must be picked according to that length. Action games provide the most satisfaction at shorter lengths, which means that the action games I pick to play must be between 5-15 hours, while the RPGs can be 25-50+ hours. It is also noted that games with multiple genres have higher ratings, so I should look for diverse games like those. Overall, this means that I can use my winter break to the fullest!
 
 <!-- Task 3 Tab: Behind the Scenes -  -->
 
@@ -153,10 +294,51 @@ There is no strict structure for you to follow. However, here is a skeleton stru
 
 ### Question 5
 
-1.  the tags and categories were in a wide format. So each tag/category was displayed in it's own row. Insetad I made the dataset shorter by making all the tags/categories into a vector for each id.
-2.  Some games in the Steam data had the ™ in the name, which led to problems while joining the datasets by name
+**(3 marks) Tell us about parts of your data processing or analysis that weren’t “sexy” and wouldn’t typically be included in a blog post. (e.g. Was their any data drudgery or time intensive wrangling? Were there any repetitive tasks or manual tasks? If it was easy, describe what made it easy?)**
 
-Here is where you should tell us about your reflection on your analysis (Task 3).
+The data had a lot of inconsistencies that could only be found by manually looking at the unique values of each column, so a lot of time went in looking for problems in the data. For example, there were some numerical variables like owner’s range that had name data.
 
-Again, these are the details about **your** perspective and the gritty details behind the scenes of your analysis.
+In the steam datasets, there were a lot of values marked as /N. These were games that had no data on them at all. However, since they were recorded as instances, they had to be removed from each csv before joining. Joining the multiple datasets was not as simple as left_joining by ID numbers as there were a lot of inconsistencies.
+
+However, since the data was already processed a lot by the previous authors of the main datasets, the cleaning process was not as tedious or troublesome as it would have been if I had to webscrape directly from the sites.
+
+### Question 6
+
+**(3 marks) Were there any challenges that you faced in conducting this analysis. These may take the form of data limitations or coding challenges? (e.g. Was there anything in your analysis that you were not anticipating when you started? Did you have to change your intended scope? Did you need to master a new skill? Were there any problems you were proud of solving?)**
+
+The biggest challenge I faced was in finding the data. A lot of the sources for the data involved direct webscraping. The websites were dynamic in most cases so I could not do it properly. Other sources had the problem of using robots that went against the ToS of the websites, so I had to look for sources of data that sourced the data ethically/legally.
+
+Adding weights to the ratings was also no easy task as the owners_range was a character variable. For this I had to learn how to use some new functions like gsub() to split the ranges. I also learnt how to effectively add weighted means for analysis. I learnt how to use regex as well, as some games in the Steam data had the "™" in the name, which led to problems while joining the datasets by name. It was also useful to split rows.
+
+### Question 7
+
+**(3 marks) Tell us about any imperfect parts of your work and how you would like to expand or improve this analysis in future? Be clear about any limitations or aspects of your analysis that fell beyond scope.**
+
+The analysis I have done is mainly on PC game data. We may find very different results on other platforms such as PlayStation or Xbox. Console gamers make up a huge portion of the playerbase and have a very different style of players, so this analysis may not apply to them. Also due to data limitations and the data being from different sources, the final dataset was greatly reduced. This may mean that the analysis may not paint a completely accurate picture due to how small the dataset is.
+
+However this topic has a lot of scope for further analysis.
+
+**Difficulty:** We could look into how difficulty affects player satisfaction as well. A lot of games that are difficult and take ages to finish have the strongest following.
+
+**Temporal Analysis**: If we have release dates, we can analyse how optimal lengths have changed over time
+
+**Multiple Length Metrics**: We can compare main story vs completionist times across genres
+
+**Outlier Analysis**: Identify games that break genre conventions successfully.
+
+**Market Segmentation**: We can analyse different owner ranges as distinct market segments.
+
+### Question 8
+
+**(3 marks) Also submit 4 earlier versions of your assignment to show your iterative process. These should be your messy versions and include exploratory code. We recommend you save these files as you progress through your assignment. Provide a short overview for markers of what youfixed/learnt/improved/changed between each file. (If you are comfortable with GitHub you may submit your Github repo, but please refer to individual commits.)**
+
+Commit 1- This is a version where the final dataset as a result of using left_join() on the steam data instead of the playmydata, which results in a dataset with over 140,000 observations. Most of these observations are data points that contain data from games in the steam data but not from the playmydata data. This means that a lot of games do not have any data on how long it takes to beat the game.
+
+Commit 2 -This is a version where I understood an initial assumption about the data was wrong. As I was looking at the data, I realised that there are still a lot of missing and NA values. This shows that I wrongly assumed that since the steam data is bigger, it included all the games from the playmydata dataset.
+
+Commit 3 - This commit is when I finalised that we do not need the steam tags and category data, and used the steamspy_insights data instead. I also joined the datasets without cleaning them, which created issues.
+
+Commit 4- This is where I realised that in most cases, the ratings were given only by a few thousand players, while the game was owned by millions. The game names also needed cleaning.
+
+Commit 5 – Final Version. Since the ratings did not paint an accurate picture, I decided to put weights on the ratings of games with higher ownership for the average.
 :::
