@@ -42,45 +42,42 @@ playmydata_pc_data=read_csv("./data/all_games_PC.csv")
 
 steam_game_data=read_csv(("./data/games.csv"))
 
-steam_categories = read_csv("./data/categories.csv")
-steam_tags = read_csv("./data/tags.csv")
-
 
 ```
 
 ```{r}
-# Grouping the tags and category data
-steam_tags_grouped = steam_tags |>
-  group_by(app_id) |>
-  summarise(tags = list(tag), .groups = "drop")
 
-steam_categories_grouped = steam_categories|>
-  group_by(app_id) |>
-  summarise(categories= list(category), .groups = "drop")
+#Reading in the steamspy insights data 
+steamspy_data= read_csv("./data/steamspy_insights.csv")
+#Reading in the steam genres set
+steam_genres = read_csv("./data/genres.csv")
 
-# Adding the data to the main steam data
-steam_game_data = steam_game_data |>
-  left_join(steam_categories_grouped, by= "app_id")|>
-  left_join(steam_tags_grouped, by="app_id")
+#Joining the raw game.csv to the steamspy 
+steam_game_data=left_join(steam_game_data,steamspy_data, by = "app_id")
+#Selecting the relevant columns
+steam_game_data=steam_game_data|>
+  select(app_id,name,owners_range,genres)
 
 
-final_game_data= left_join(playmydata_pc_data, steam_game_data, by = "name")
+# Joining the genre data 
+test_steam_game_data = left_join(steam_game_data,steam_genres,by="app_id")
+test_full_game_data = left_join(playmydata_pc_data,test_steam_game_data,by="name")
 
-#removing na values
-filtered_game_data= final_game_data|>
-  filter(!is.na(app_id))   #the resulting dataset has only 30,000 games
+#Removing NA values
+test_full_game_data = test_full_game_data|> filter(!is.na(app_id))
+#Selecting required columns:
+test_full_game_data=test_full_game_data|>
+  select(app_id,name,categories,tags,owners_range,genres,genres.y)
 
-#Removing games with missing ratings and completion times
-filtered_game_data= filtered_game_data|>filter(!rating%in%c("Missing","nan"))
-filtered_game_data = filtered_game_data|> filter(!main=="NaN")
-#arranging for easier view
-filtered_game_data|> arrange(rating)
+
 
 ```
 
 ### Remember
 
 Please mention any additional files that you want the markers to review, eg. read me, meta data etc.
+
+The github repository for this Quarto document is [here](https://github.com/Psaj0002/ETC5512-Assignment-2--35571381). Please note that the first commit is in a separate file as the file was later renamed.
 
 <!-- Task 2 Tab: Writing your blogpost -->
 
