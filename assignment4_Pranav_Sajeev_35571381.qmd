@@ -37,38 +37,74 @@ library(stringr)
 ```{r}
 # Reading in the data
 
-
-playmydata_pc_data=read_csv("./data/all_games_PC.csv")
-
 steam_game_data=read_csv(("./data/games.csv"))
+playmydata_pc_data=read_csv("./data/all_games_PC.csv")
+#Reading in the steamspy insights data 
+steamspy_data= read_csv("./data/steamspy_insights.csv")
 
 
 ```
 
 ```{r}
+##Removing all demos from the data and NA values
+steam_game_data = steam_game_data|>
+  filter(!type=="demo")
 
-#Reading in the steamspy insights data 
-steamspy_data= read_csv("./data/steamspy_insights.csv")
-#Reading in the steam genres set
-steam_genres = read_csv("./data/genres.csv")
-
-#Joining the raw game.csv to the steamspy 
-steam_game_data=left_join(steam_game_data,steamspy_data, by = "app_id")
-#Selecting the relevant columns
+steam_game_data = steam_game_data|>
+  filter(!owners_range=="NA")
+#Selecting the required variables from the steam dataset
 steam_game_data=steam_game_data|>
-  select(app_id,name,owners_range,genres)
+  select(app_id,name)
+#Removing the /N values from steamspy
+  steamspy_data= steamspy_data|>
+    filter(!genres=="\\N")|>
+    filter(!owners_range=="\\N")
+#Selecting only the required variables
+  steamspy_data=steamspy_data|>
+    select(app_id,owners_range,genres)
+  
+#Joining the raw game.csv to the steamspy like we did for categories and tags
+steam_game_data=left_join(steam_game_data,steamspy_data, by = "app_id")
+#Removing app_id as we don't need it going forward
+steam_game_data = steam_game_data|> select(-app_id)
 
 
-# Joining the genre data 
-test_steam_game_data = left_join(steam_game_data,steam_genres,by="app_id")
-test_full_game_data = left_join(playmydata_pc_data,test_steam_game_data,by="name")
+#Some names have  "™" so we will remove them to avoid problems when joining the datasets
+steam_game_data$name = str_replace_all(steam_game_data$name, "™", "")
 
+#Now cleaning the playmydata data
+
+playmydata_pc_data=playmydata_pc_data|>
+  select(-c(genres,id,platforms,summary,storyline,people_polled,))
 #Removing NA values
-test_full_game_data = test_full_game_data|> filter(!is.na(app_id))
-#Selecting required columns:
-test_full_game_data=test_full_game_data|>
-  select(app_id,name,categories,tags,owners_range,genres,genres.y)
+playmydata_pc_data=playmydata_pc_data|>
+  filter(!rating %in% c("Missing","nan"))
+playmydata_pc_data=playmydata_pc_data|>
+  filter(!main =="NaN")|>
+  filter(!main== 0.00)
 
+#Ratings are stored as characters, so changing them to double
+playmydata_pc_data$rating = as.numeric(playmydata_pc_data$rating)
+#Rounding the rating values
+playmydata_pc_data$rating = round(playmydata_pc_data$rating,2)
+
+
+#Joining the datasets
+final_game_data = inner_join(playmydata_pc_data,steam_game_data, by="name")
+
+# adjustments on the final dataset
+#Separating the genres into different rows
+final_game_data = final_game_data|> 
+  separate_rows(genres, sep = ",\\s*") 
+
+#Creating an average length variable based on completeion times
+final_game_data_t = final_game_data|> 
+  mutate(
+  main = na_if(main, 0),
+  extra = na_if(extra, 0),
+  completionist = na_if(completionist, 0),
+  avg_length = rowMeans(across(c(main, extra, completionist)), na.rm = TRUE)
+)
 
 
 ```
